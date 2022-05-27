@@ -1,15 +1,16 @@
 import datetime
 import time
 import json
+import os
 
 from gql import Client
 from gql.transport.aiohttp import AIOHTTPTransport
 
-from src.data_extraction import run_query, data_processing
+from src.data_extraction import run_query
 
 # CONFIG
 # init transport client
-transport = AIOHTTPTransport(url="https://api.thegraph.com/subgraphs/name/superfluid-finance/protocol-v1-matic")
+transport = AIOHTTPTransport(url="https://api.thegraph.com/subgraphs/name/superfluid-finance/protocol-dev-matic")
 client = Client(transport=transport)
 
 # USER INPUT
@@ -31,7 +32,7 @@ with open("data/account_token_snapshots.json", "w") as file:
 
     file.write(json.dumps(account_token_snapshots))
 
-    
+
 with open("data/liquidation_events.json", "w") as file:
 
     file.write(json.dumps(liquidation_events))

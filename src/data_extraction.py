@@ -31,6 +31,9 @@ def run_query(client, timestamp_gt, timestamp_lt):
 
     liquidation_events = []
 
+    first_n = 1000
+    skip_n = 0
+
     while True:
 
         first_n = 1000
@@ -48,56 +51,89 @@ def run_query(client, timestamp_gt, timestamp_lt):
 
         liquidation_events = liquidation_events + response["agreementLiquidatedV2Events"]
 
+        timestamps = [int(response['timestamp']) for response in liquidation_events]
+        min_time = min(timestamps) + 1
+
         if len(response["agreementLiquidatedV2Events"]) != first_n:
             
             break
 
         skip_n += first_n
 
+        if skip_n > 5000:
+
+            skip_n = 0
+            startedAtTimestamp_lt = min_time
+
+    max_block = max([int(elem["blockNumber"]) for elem in liquidation_events])
+    min_block = min([int(elem["blockNumber"]) for elem in liquidation_events]) - 1
+    
+    ## Get Account Token Snapshotssub
+    # queries
+    query = gql("""
+        query MyQuery($skip: Int!, $first: Int!, $blockNumber_gte: BigInt!, $blockNumber_lt: BigInt!) {
+            accountTokenSnapshotLogs(
+                skip: $skip
+                orderBy: blockNumber
+                orderDirection: desc
+                first: $first
+                where: {
+                    blockNumber_gte: $blockNumber_gte, 
+                    blockNumber_lt: $blockNumber_lt
+                }
+            ) {
+                balance
+                blockNumber
+                id
+                order
+                timestamp
+                totalDeposit
+                totalNetFlowRate
+                triggeredByEventName
+            }
+        }
+    """)
+
+
     account_token_snapshots = []
 
-    #for liquidation_event in stqdm(liquidation_events, desc="Querying accountTokenSnapshots..."):
-    for liquidation_event in liquidation_events:
+    first_n = 1000
+    skip_n = 0
 
-        Id = f"{liquidation_event['targetAccount']}-{liquidation_event['token']}"
-        BlockNumber = int(liquidation_event["blockNumber"]) - 1 
-
-        ## Get Account Token Snapshotssub
-        # queries
-        query = gql("""
-            query AccountTokenSnapshot ($number: Int!, $id: ID!){
-                accountTokenSnapshots(
-                    block: {
-                        number: $number
-                        }, 
-                    where: {
-                        id: $id
-                }) {
-                id
-                balanceUntilUpdatedAt
-                updatedAtTimestamp
-                totalNetFlowRate
-                }
-            }
-        """)
+    while True:
 
         # Set query parameters
         params = {
-            "id": Id,
-            "number": BlockNumber,
+            "first": first_n,
+            "skip": skip_n,
+            "blockNumber_gte": min_block,
+            "blockNumber_lt": max_block,
         }
 
         response = client.execute(query, variable_values=params)
 
-        account_token_snapshots = account_token_snapshots + response["accountTokenSnapshots"]
-        
-        # convert GWEI to ETH
-        # for snapshot in account_token_snapshots:
-        for event in liquidation_events:
-            event["rewardAmount_form"] = float(event["rewardAmount"]) / (10**18) 
-        
-        for snapshot in account_token_snapshots:
-            snapshot["balanceUntilUpdatedAt_form"] = float(snapshot["balanceUntilUpdatedAt"]) / (10**18)
-            snapshot["totalNetFlowRate_form"] =  float(snapshot["totalNetFlowRate"]) / (10**18)
+        account_token_snapshots = account_token_snapshots + response["accountTokenSnapshotLogs"]
+
+        blockstamps = [int(response['blockNumber']) for response in account_token_snapshots]
+        min_block_new = min(blockstamps) + 1
+
+        if len(response["accountTokenSnapshotLogs"]) != first_n:
+            
+            break
+
+        skip_n += first_n
+
+        if skip_n > 5000:
+
+            skip_n = 0
+            max_block = min_block_new
+    
+    # convert GWEI to ETH
+    for event in liquidation_events:
+        event["rewardAmount_form"] = float(event["rewardAmount"]) / (10**18) 
+    
+    for snapshot in account_token_snapshots:
+        snapshot["balance_form"] = float(snapshot["balance"]) / (10**18)
+        snapshot["totalNetFlowRate_form"] =  float(snapshot["totalNetFlowRate"]) / (10**18)
 
     return liquidation_events, account_token_snapshots
